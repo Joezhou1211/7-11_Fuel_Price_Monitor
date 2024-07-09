@@ -39,9 +39,13 @@ To use this Monitor, you need to:
   ```bash
   Python main.py 
   ```
+- You will need enough data to start(around 30 days for accuracy), please get them from [here](https://projectzerothree.info/trends.php)
 
 # Chart will be sent to email
 Alert line(Red): you will be notified via email when price go below the line.
 Price(Green): Historical prices.
 90 Days Highest(Horizontal Red): Highest in 90 days.
+
+<img width="348" alt="image" src="https://github.com/Joezhou1211/7-11_Fuel_Price_Monitor/assets/121386280/a1f4d29d-6090-4bfc-b984-bfb4c144f00d">
+
 ![image](https://github.com/Joezhou1211/7-11_Fuel_Price_Monitor/assets/121386280/76c5904e-23b2-4cfe-b330-7e39758212ce)
