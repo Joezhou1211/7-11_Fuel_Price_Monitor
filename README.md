@@ -1,7 +1,7 @@
 # Fuel Price Monitoring Script
 
 ## Introduction
-This script is designed to monitor fuel prices in the QLD region for U91 gasoline(can be easily modified to your Area). It fetches the latest prices, updates local records, generates a price chart, and sends alert emails when certain conditions are met. with this Monitor, You will be able to get the cheapest fuel by using 'My 7-Eleven' APP to lock the fuel price (Simulate your location to the lowest price area. I can't share more about it, you might need some research).
+This script is designed to monitor fuel prices in the QLD region for U91 gasoline(can be easily modified to your Area). It fetches the latest prices, updates local records, generates a price chart, and sends alert emails when certain conditions are met(When the fuel is relatively cheap). with this Monitor, You will be able to get the cheapest fuel by using 'My 7-Eleven' APP. (Simulate your location to the lowest price area then lock the fuel price. I can't share more about it, you might need some research).
 
 ## How It Works
 ### Fetching Fuel Prices:
@@ -40,6 +40,8 @@ To use this Monitor, you need to:
   Python main.py 
   ```
 
-
-# Screen Shots of email 
+# Chart will be sent to email
+Alert line(Red): you will be notified via email when price go below the line.
+Price(Green): Historical prices.
+90 Days Highest(Horizontal Red): Highest in 90 days.
 ![image](https://github.com/Joezhou1211/7-11_Fuel_Price_Monitor/assets/121386280/76c5904e-23b2-4cfe-b330-7e39758212ce)
