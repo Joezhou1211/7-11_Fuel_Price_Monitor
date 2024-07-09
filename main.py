@@ -11,32 +11,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter, DayLocator
 
-# Configure logging
+# 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Define file paths
+# 定义保存文件路径
 data_file = 'fuel_prices.json'
 full_data = 'data.json'
 
-# Email sending information
+# 邮件发送相关信息
 mail = 'sender mail'
 mail_password = 'sender mail password'
-recipient_mails = ['receiver mails']  # Add multiple recipient emails here
+recipient_mails = ['reciver mails']  # 这里添加多个收件人邮箱
 alert_sent = {'timestamp': '2024-06-17 04:00:59', 'price': 0}
 
-# Initialize scheduler
+# 初始化调度器
 scheduler = BlockingScheduler()
 
+
 def fetch_and_update_fuel_prices():
-    logging.info("Starting to fetch and update fuel prices...")
+    logging.info("开始获取和更新油价数据...")
     url = 'https://projectzerothree.info/api.php?format=json'
     try:
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
-        logging.info("Successfully fetched API data")
+        logging.info("成功获取API数据")
     except requests.RequestException as e:
-        logging.error(f"API request failed: {e}")
+        logging.error(f"API请求失败: {e}")
         return
 
     qld_u91_prices = []
@@ -48,41 +49,41 @@ def fetch_and_update_fuel_prices():
                     qld_u91_prices.append(price_info)
 
     if not qld_u91_prices:
-        logging.info("No U91 fuel prices found for QLD region.")
+        logging.info("没有找到QLD地区的U91汽油价格信息。")
         return
 
     qld_u91_prices_sorted = sorted(qld_u91_prices, key=lambda x: x['price'])
     lowest_price_info = qld_u91_prices_sorted[0]
     lowest_price_info['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    logging.info(f"Lowest price info: {lowest_price_info}")
+    logging.info(f"最低价格信息: {lowest_price_info}")
 
     try:
         with open(data_file, 'r') as file:
             price_records = json.load(file)
-        logging.info("Successfully read fuel_prices.json file")
+        logging.info("成功读取fuel_prices.json文件")
     except FileNotFoundError:
-        logging.info("fuel_prices.json not found")
+        logging.info("没有找到fuel_prices.json")
         return
 
     try:
         with open(full_data, 'r') as file:
             record_data = json.load(file)
-        logging.info("Successfully read data.json file")
+        logging.info("成功读取data.json文件")
     except FileNotFoundError:
-        logging.info("data.json not found")
+        logging.info("没有找到data.json")
         return
 
-    record_data.append(lowest_price_info)  # Add latest data
+    record_data.append(lowest_price_info)  # 添加最新数据
     with open(full_data, 'w') as file:
         json.dump(record_data, file, indent=4)
-        logging.info("Successfully updated data.json")
+        logging.info("成功更新data.json")
 
-    # Update today's lowest price record
+    # 更新当天最低价格记录
     today_str = datetime.now().strftime('%Y-%m-%d')
     today_records = [record for record in price_records if record['timestamp'].startswith(today_str)]
 
-    # Check and extend last_sent time
+    # 检查并延续 last_sent 时间
     if price_records and 'last_sent' in price_records[-1]:
         last_sent_time = datetime.strptime(price_records[-1]['last_sent'], '%Y-%m-%d %H:%M:%S')
         if (datetime.now() - last_sent_time).days < 7:
@@ -93,29 +94,30 @@ def fetch_and_update_fuel_prices():
         if lowest_price_info['price'] < current_lowest_today['price']:
             price_records = [record for record in price_records if not record['timestamp'].startswith(today_str)]
             price_records.append(lowest_price_info)
-            logging.info("Updated today's lowest price record")
+            logging.info("更新当天最低价格记录")
         else:
-            logging.info("Current price is higher than or equal to today's lowest price, not updating record")
+            logging.info("当前价格高于或等于今天的最低价格，不更新记录")
             return
     else:
         price_records.append(lowest_price_info)
 
     with open(data_file, 'w') as file:
         json.dump(price_records, file, indent=4)
-        logging.info("Successfully updated fuel_prices.json")
+        logging.info("成功更新fuel_prices.json")
 
-    # Check if there is enough data to calculate price change
+    # 检查是否有足够的数据进行价格变动计算
     check_price_change(price_records, lowest_price_info)
 
-    # Check if visualization email needs to be sent
+    # 检查是否需要发送可视化图表邮件
     check_and_send_visualization(price_records, record_data)
 
+
 def check_price_change(price_records, current_record):
-    logging.info("Checking for price change...")
+    logging.info("开始检查价格变动...")
     if not any(
             datetime.strptime(record['timestamp'], '%Y-%m-%d %H:%M:%S') < datetime.now() - timedelta(days=30)
             for record in price_records):
-        logging.info("Insufficient data, not reaching 30-day record.")
+        logging.info("数据不足，未达到30天记录。")
         return
 
     now = datetime.now()
@@ -130,25 +132,25 @@ def check_price_change(price_records, current_record):
         highest_price_90_days = max(recent_90_days_prices)
         current_price = current_record['price']
 
-        logging.info(f"Current price: {current_price}")
+        logging.info(f"当前价格: {current_price}")
 
-        # Condition 1: Price dropped 10% compared to the highest price in the last 90 days
+        # 条件1: 价格相对于90天内的最高价下跌了10%
         condition1 = (highest_price_90_days - current_price) / highest_price_90_days >= 0.10
-        logging.info(f"Condition 1 (10% drop from 90-day high): {condition1}, 90-day highest price: {highest_price_90_days}")
+        logging.info(f"条件1（90天内最高价下跌10%）: {condition1}, 90天最高价格: {highest_price_90_days}")
 
-        # Condition 2: Current price is below the 5% moving average
-        # Calculate moving average
+        # 条件2: 当前价格低于均线的5%
+        # 计算移动平均线
         data_points = len(recent_90_days_prices)
         moving_average = [np.mean(recent_90_days_prices[max(0, i - data_points + 1):i + 1]) for i in range(len(recent_90_days_prices))]
 
-        # Calculate alert line
+        # 计算警报线
         alert_line = [round(x * 0.95, 2) for x in moving_average]  # 95%
 
         condition2 = current_price < alert_line[-1]
-        logging.info(f"and Condition 2 (below 30-day MA by 5%): {condition2}, 30-day moving average: {alert_line[-1]}")
+        logging.info(f"并且 条件2（低于30天均线的5%）: {condition2}, 30天移动平均: {alert_line[-1]}")
 
         condition3 = current_price < 140
-        logging.info(f"or Condition 3 (below 140): {condition3}")
+        logging.info(f"或 条件3（低于140）: {condition3}")
 
         if (condition1 and condition2) or condition3:
             if not alert_sent['timestamp'] or datetime.strptime(alert_sent['timestamp'],
@@ -157,17 +159,18 @@ def check_price_change(price_records, current_record):
                     alert_sent['price'] = current_price
                     price_change_percentage = -round(
                         ((highest_price_90_days - current_price) / highest_price_90_days) * 100, 2)
-                    logging.info(f"Current price change percentage compared to the highest point in the past 90 days: {price_change_percentage}%")
-                    alert_sent['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Update alert sent time
-                    sendemail(current_record, highest_price_90_days, price_change_percentage, alert_line[-1])
+                    logging.info(f"当前价格相比过去90天最高点的变化百分比: {price_change_percentage}%")
+                    alert_sent['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # 更新警报发送时间
+                    send_email(current_record, highest_price_90_days, price_change_percentage, alert_line[-1])
                 else:
-                    logging.info("Price change less than 1%, not sending alert email.")
+                    logging.info("价格变动不足1%，不发送警报邮件。")
             else:
-                logging.info("Alert email already sent today, not sending again.")
+                logging.info("今天已经发送过警报邮件，不再发送。")
         else:
-            logging.info("Conditions not met, not sending alert.")
+            logging.info("条件未满足，不发送警报。")
     else:
-        logging.info("Insufficient price data in the last 90 days.")
+        logging.info("最近90天内没有足够的价格数据。")
+
 
 def send_email(current_record, highest_price_90_days, price_change_percentage, moving_average_30_days):
     gmail_user = mail
@@ -193,28 +196,30 @@ def send_email(current_record, highest_price_90_days, price_change_percentage, m
             server.login(gmail_user, gmail_password)
             server.sendmail(gmail_user, recipient_mail, msg.as_string())
             server.close()
-            logging.warning(f"Email successfully sent to: {recipient_mail}")
+            logging.warning(f"邮件发送成功到: {recipient_mail}")
         except Exception as e:
-            logging.warning(f'Failed to send email to: {recipient_mail} Error: {e}')
+            logging.warning(f'邮件发送失败到: {recipient_mail} 错误: {e}')
+
 
 def check_and_send_visualization(price_records, record_data):
-    logging.info("Checking if visualization email needs to be sent...")
+    logging.info("检查是否需要发送可视化图表邮件...")
     if not price_records:
-        logging.info("No price records found, not sending email")
+        logging.info("没有找到价格记录，不发送邮件")
         return
 
-    # Check the timestamp of the last sent email
+    # 检查最近一次发送的时间戳
     last_record = price_records[-1]
     last_sent_timestamp = last_record.get('last_sent')
 
     now = datetime.now()
     if not last_sent_timestamp or (now - datetime.strptime(last_sent_timestamp, '%Y-%m-%d %H:%M:%S')).days >= 7:
-        # Generate and send chart email
+        # 生成并发送图表邮件
         send_visualization_email(record_data)
-        # Update the sent timestamp
+        # 更新发送时间戳
         last_record['last_sent'] = now.strftime('%Y-%m-%d %H:%M:%S')
         with open(data_file, 'w') as file:
             json.dump(price_records, file, indent=4)
+
 
 def send_visualization_email(record_data):
     now = datetime.now()
@@ -225,7 +230,7 @@ def send_visualization_email(record_data):
     ]
 
     if not recent_90_days_records:
-        logging.info("Not enough data in the last 90 days, no chart generated")
+        logging.info("最近90天内没有足够的数据，不生成图表")
         return
 
     dates = [datetime.strptime(record['timestamp'], '%Y-%m-%d %H:%M:%S') for record in recent_90_days_records]
@@ -234,18 +239,18 @@ def send_visualization_email(record_data):
     highest_price_90_days = max(prices)
     highest_date_90_days = dates[prices.index(highest_price_90_days)]
 
-    # Calculate moving average
+    # 计算移动平均线
     data_points = len(prices)
     moving_average = [np.mean(prices[max(0, i - data_points + 1):i + 1]) for i in range(len(prices))]
 
-    # Calculate alert line
+    # 计算警报线
     alert_line = [round(x * 0.95, 2) for x in moving_average]  # 95%
 
     plt.figure(figsize=(22, 11))
     plt.plot(dates, prices, marker='o', linestyle='-', color='green', label='QLD - U91')
     plt.plot(dates, alert_line, linestyle=':', color='red', label='Alert Line (30 Day MA)')
 
-    # Annotate 90-day highest price
+    # 标注90天内最高价格
     plt.axhline(highest_price_90_days, color='red', linestyle='--', label='90 Day High')
     plt.annotate('90 Day High', xy=(highest_date_90_days, highest_price_90_days),
                  xytext=(highest_date_90_days, highest_price_90_days + 5),
@@ -257,40 +262,41 @@ def send_visualization_email(record_data):
     plt.legend()
     plt.grid(True)
 
-    # Set date format
+    # 设置日期格式
     ax = plt.gca()
-    ax.xaxis.set_major_locator(DayLocator(interval=1))  # Show one date per day
-    ax.xaxis.set_major_formatter(DateFormatter('%d %b'))  # Date format like "4 May"
+    ax.xaxis.set_major_locator(DayLocator(interval=1))  # 每天显示一个日期
+    ax.xaxis.set_major_formatter(DateFormatter('%d %b'))  # 日期格式如 "4 May"
     plt.xticks(rotation=45)
 
     plt.yticks(np.arange(min(prices), max(prices) + 1, 2.5))
 
     plt.tight_layout()
 
-    # Save chart to file
+    # 保存图表到文件
     chart_file = 'fuel_prices_chart.png'
     plt.savefig(chart_file)
     plt.close()
 
-    # Send email
+    # 发送邮件
     gmail_user = mail
     gmail_password = mail_password
 
-    # Create email
+    # 创建邮件
     for recipient_mail in recipient_mails:
+        # 创建邮件
         msg = MIMEMultipart()
         msg['Subject'] = '7-11 Weekly U91 Price Chart'
         msg['From'] = gmail_user
         msg['To'] = recipient_mail
 
-        # Email body
+        # 邮件正文
         text = MIMEText(
             f"State：QLD\nType：U91\nData Points: {len(prices)}\n"
             f"Current Trigger Price: {alert_line[-1]} cents/L\n90 Days High: {highest_price_90_days} cents/L\n"
         )
         msg.attach(text)
 
-        # Attach chart image
+        # 添加图表图片
         with open(chart_file, 'rb') as f:
             img_data = f.read()
 
@@ -298,7 +304,7 @@ def send_visualization_email(record_data):
         image.add_header('Content-ID', '<chart>')
         msg.attach(image)
 
-        # Embed image in email body
+        # 将图片嵌入邮件正文
         html = MIMEText('<br><img src="cid:chart"><br>', 'html')
         msg.attach(html)
 
@@ -308,12 +314,13 @@ def send_visualization_email(record_data):
             server.login(gmail_user, gmail_password)
             server.sendmail(gmail_user, recipient_mail, msg.as_string())
             server.close()
-            logging.warning(f"Chart email successfully sent to: {recipient_mail}")
+            logging.warning(f"图表邮件发送成功到: {recipient_mail}")
         except Exception as e:
-            logging.warning(f'Failed to send chart email to: {recipient_mail} Error: {e}')
+            logging.warning(f'图表邮件发送失败到: {recipient_mail} 错误: {e}')
 
-# Schedule task
-scheduler.add_job(fetch_and_update_fuel_prices, 'interval', hours=1)  # Auto run every 1 hour, or modify to 30 minutes, 30 seconds, etc.
 
-# Start scheduler
+# 设置任务调度
+scheduler.add_job(fetch_and_update_fuel_prices, 'interval', hours=1)  # Auto run every 1 hours, or modify to 30 minuns, 30 seconds etc....
+
+# 启动调度器
 scheduler.start()
