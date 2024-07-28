@@ -51,5 +51,5 @@ Price(Green): Historical prices.
 ![image](https://github.com/Joezhou1211/7-11_Fuel_Price_Monitor/assets/121386280/76c5904e-23b2-4cfe-b330-7e39758212ce)
 
 # You can now use an HTML page to view real-time price charts and Add/Remove the recipients.
-- Try it on [http://20.169.240.82:7001]
+- Try it on [http://20.169.240.82:7001] PLEASE DO NOT ATTACK THIS SERVER.
 <img width="1435" alt="image" src="https://github.com/user-attachments/assets/c405bd42-c833-4337-8df9-a0310378f67c">
