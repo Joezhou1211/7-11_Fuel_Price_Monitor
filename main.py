@@ -10,6 +10,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter, DayLocator
+from flask import Flask, render_template, request, send_from_directory
+import threading
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,10 +20,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 data_file = 'fuel_prices.json'
 full_data = 'data.json'
 
+
+def get_recipient_mails():
+    global recipient_mails
+    with open("recipient_mails.json", 'r') as file:
+        recipient_mails = json.load(file)
+
+
 # 邮件发送相关信息
-mail = 'sender mail'
-mail_password = 'sender mail password'
-recipient_mails = ['reciver mails']  # 这里添加多个收件人邮箱
+mail = 'your_sender_email'
+mail_password = 'your_password'
+recipient_mails = []
+get_recipient_mails()
+
 alert_sent = {'timestamp': '2024-06-17 04:00:59', 'price': 0}
 
 # 初始化调度器
@@ -141,7 +152,8 @@ def check_price_change(price_records, current_record):
         # 条件2: 当前价格低于均线的5%
         # 计算移动平均线
         data_points = len(recent_90_days_prices)
-        moving_average = [np.mean(recent_90_days_prices[max(0, i - data_points + 1):i + 1]) for i in range(len(recent_90_days_prices))]
+        moving_average = [np.mean(recent_90_days_prices[max(0, i - data_points + 1):i + 1]) for i in
+                          range(len(recent_90_days_prices))]
 
         # 计算警报线
         alert_line = [round(x * 0.95, 2) for x in moving_average]  # 95%
@@ -173,6 +185,7 @@ def check_price_change(price_records, current_record):
 
 
 def send_email(current_record, highest_price_90_days, price_change_percentage, moving_average_30_days):
+    get_recipient_mails()
     gmail_user = mail
     gmail_password = mail_password
     for recipient_mail in recipient_mails:
@@ -222,6 +235,7 @@ def check_and_send_visualization(price_records, record_data):
 
 
 def send_visualization_email(record_data):
+    get_recipient_mails()
     now = datetime.now()
     ninety_days_ago = now - timedelta(days=90)
     recent_90_days_records = [
@@ -247,7 +261,7 @@ def send_visualization_email(record_data):
     alert_line = [round(x * 0.95, 2) for x in moving_average]  # 95%
 
     plt.figure(figsize=(22, 11))
-    plt.plot(dates, prices, marker='o', linestyle='-', color='green', label='QLD - U91')
+    plt.plot(dates, prices, marker='.', linestyle='-', color='green', label='QLD - U91')
     plt.plot(dates, alert_line, linestyle=':', color='red', label='Alert Line (30 Day MA)')
 
     # 标注90天内最高价格
@@ -273,7 +287,7 @@ def send_visualization_email(record_data):
     plt.tight_layout()
 
     # 保存图表到文件
-    chart_file = 'fuel_prices_chart.png'
+    chart_file = 'static/fuel_prices_chart.png'
     plt.savefig(chart_file)
     plt.close()
 
@@ -292,7 +306,10 @@ def send_visualization_email(record_data):
         # 邮件正文
         text = MIMEText(
             f"State：QLD\nType：U91\nData Points: {len(prices)}\n"
-            f"Current Trigger Price: {alert_line[-1]} cents/L\n90 Days High: {highest_price_90_days} cents/L\n"
+            f"Trigger: {alert_line[-1]} cents/L\n90 Days High: {highest_price_90_days} cents/L\n"
+            f"Current Price: {prices[-1]} cents/L"
+            f"To unsubscribe, please click the following link:\n"
+            f"http://20.169.240.82:7001\n"
         )
         msg.attach(text)
 
@@ -300,7 +317,7 @@ def send_visualization_email(record_data):
         with open(chart_file, 'rb') as f:
             img_data = f.read()
 
-        image = MIMEImage(img_data, name='fuel_prices_chart.png')
+        image = MIMEImage(img_data, name='static/fuel_prices_chart.png')
         image.add_header('Content-ID', '<chart>')
         msg.attach(image)
 
@@ -319,8 +336,35 @@ def send_visualization_email(record_data):
             logging.warning(f'图表邮件发送失败到: {recipient_mail} 错误: {e}')
 
 
-# 设置任务调度
-scheduler.add_job(fetch_and_update_fuel_prices, 'interval', hours=1)  # Auto run every 1 hours, or modify to 30 minuns, 30 seconds etc....
+def run_scheduler():
+    # 设置任务调度
+    scheduler.add_job(fetch_and_update_fuel_prices, 'interval', hours=1)
 
-# 启动调度器
-scheduler.start()
+    # 启动调度器
+    scheduler.start()
+
+
+# 创建python服务器
+app = Flask(__name__)
+
+
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('index.html')
+
+
+@app.route('/recipient_mails.json', methods=['GET', 'PUT'])
+def handle_recipient_mails():
+    if request.method == 'GET':
+        return send_from_directory('.', 'recipient_mails.json')
+    elif request.method == 'PUT':
+        with open('recipient_mails.json', 'w') as f:
+            json.dump(request.json, f, indent=4)
+        return '', 204
+
+
+if __name__ == '__main__':
+    scheduler_thread = threading.Thread(target=run_scheduler)
+    scheduler_thread.start()
+
+    app.run(host='0.0.0.0', port=7001, debug=False)
