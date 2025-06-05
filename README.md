@@ -1,13 +1,13 @@
 # Fuel Price Monitoring Script
 
 ## Introduction
-This script is designed to monitor fuel prices in the QLD region for U91 gasoline(can be easily modified to your Area). It fetches the latest prices, updates local records, generates a price chart, and sends alert emails when certain conditions are met(When the fuel is relatively cheap). with this Monitor, You will be able to get the cheapest fuel by using 'My 7-Eleven' APP. (Simulate your location to the lowest price area then lock the fuel price. I can't share more about it, you might need some research).
+This script is designed to monitor fuel prices in the QLD region for **all** fuel types (can be easily modified to your Area). It fetches the latest prices, updates local records, generates a price chart, and sends alert emails when certain conditions are met (when the fuel is relatively cheap). With this Monitor, you will be able to get the cheapest fuel by using 'My 7-Eleven' APP. (Simulate your location to the lowest price area then lock the fuel price. I can't share more about it, you might need some research).
 
 ## How It Works
 ### Fetching Fuel Prices:
 
 The script fetches fuel prices from the API https://projectzerothree.info/api.php?format=json.
-It extracts U91 fuel prices for the QLD region.
+It extracts fuel prices for **all available types** in the QLD region.
 The fetched prices are saved locally in fuel_prices.json.
 ### Updating Local Records:
 
@@ -16,7 +16,7 @@ It updates the local JSON file with new price data.
 ### Generating Price Chart:
 
 The script generates a price chart using Matplotlib.
-The chart includes U91 prices and the highest price in the last 90 days.
+The chart includes price trends for each fuel type and the highest price in the last 90 days.
 ### Sending Alert Emails:
 
 The script sends an alert email if the current price exceeds 105% of the last alert price.
