@@ -1,5 +1,5 @@
-requests~=2.31.0
-matplotlib~=3.9.2
+requests
+matplotlib
 pandas~=2.2.3
-APScheduler~=3.10.4
+APScheduler
 Flask~=3.0.3
