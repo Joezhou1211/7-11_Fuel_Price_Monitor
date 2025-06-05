@@ -56,79 +56,76 @@ def fetch_and_update_fuel_prices():
         logging.error(f"API请求失败: {e}")
         return
 
-    qld_u91_prices = []
+    qld_prices = {}
 
     for region in data['regions']:
         if region['region'] == 'QLD':
             for price_info in region['prices']:
-                if price_info['type'] == 'U91':
-                    qld_u91_prices.append(price_info)
+                fuel_type = price_info['type']
+                qld_prices.setdefault(fuel_type, []).append(price_info)
 
-    if not qld_u91_prices:
-        logging.info("没有找到QLD地区的U91汽油价格信息。")
+    if not qld_prices:
+        logging.info("没有找到QLD地区的油价信息。")
         return
 
-    qld_u91_prices_sorted = sorted(qld_u91_prices, key=lambda x: x['price'])
-    lowest_price_info = qld_u91_prices_sorted[0]
-    lowest_price_info['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    # 读取并更新 data.json
+    # 读取数据文件
     try:
         with open(full_data, 'r') as file:
             record_data = json.load(file)
         logging.info("成功读取data.json文件")
     except FileNotFoundError:
-        logging.info("没有找到data.json文件，将创建新文件")
-        return
+        record_data = []
 
-    record_data.append(lowest_price_info)
-    with open(full_data, 'w') as file:
-        json.dump(record_data, file, indent=4)
-        logging.info(f"*** 成功更新data.json: {lowest_price_info} ***")
-
-    # 读取并更新 fuel_prices.json
     try:
         with open(data_file, 'r') as file:
             price_records = json.load(file)
         logging.info("成功读取fuel_prices.json文件")
     except FileNotFoundError:
-        logging.info("没有找到fuel_prices.json")
-        return
+        price_records = []
 
-    # 更新当天最低价格记录
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    today_records = [record for record in price_records if record['timestamp'].startswith(today_str)]
+    for fuel_type, prices_list in qld_prices.items():
+        prices_sorted = sorted(prices_list, key=lambda x: x['price'])
+        lowest_price_info = prices_sorted[0]
+        lowest_price_info['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # 检查并延续 last_sent 时间
-    if price_records and 'last_sent' in price_records[-1]:
-        last_sent_time = datetime.strptime(price_records[-1]['last_sent'], '%Y-%m-%d %H:%M:%S')
-        if (datetime.now() - last_sent_time).days < 7:
-            lowest_price_info['last_sent'] = price_records[-1]['last_sent']
+        record_data.append(lowest_price_info)
 
-    if today_records:
-        current_lowest_today = min(today_records, key=lambda x: x['price'])
-        if lowest_price_info['price'] < current_lowest_today['price']:
-            price_records = [record for record in price_records if not record['timestamp'].startswith(today_str)]
-            price_records.append(lowest_price_info)
-            logging.info("更新当天最低价格记录\n\n")
+        type_records = [r for r in price_records if r['type'] == fuel_type]
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        today_records = [r for r in type_records if r['timestamp'].startswith(today_str)]
+
+        if type_records and 'last_sent' in type_records[-1]:
+            last_sent_time = datetime.strptime(type_records[-1]['last_sent'], '%Y-%m-%d %H:%M:%S')
+            if (datetime.now() - last_sent_time).days < 7:
+                lowest_price_info['last_sent'] = type_records[-1]['last_sent']
+
+        if today_records:
+            current_lowest_today = min(today_records, key=lambda x: x['price'])
+            if lowest_price_info['price'] < current_lowest_today['price']:
+                price_records = [rec for rec in price_records if not (rec['timestamp'].startswith(today_str) and rec['type'] == fuel_type)]
+                price_records.append(lowest_price_info)
+                logging.info(f"更新当天{fuel_type}最低价格记录\n\n")
+            else:
+                logging.info(f"当前{fuel_type}价格高于或等于今天的最低价格，不更新记录\n\n")
+                continue
         else:
-            logging.info("当前价格高于或等于今天的最低价格，不更新记录\n\n")
-            return
-    else:
-        price_records.append(lowest_price_info)
+            price_records.append(lowest_price_info)
+
+        type_records_updated = [r for r in price_records if r['type'] == fuel_type]
+        record_data_type = [r for r in record_data if r['type'] == fuel_type]
+        check_price_change(type_records_updated, lowest_price_info, fuel_type)
+        check_and_send_visualization(type_records_updated, record_data_type, fuel_type)
+
+    with open(full_data, 'w') as file:
+        json.dump(record_data, file, indent=4)
+        logging.info("*** 成功更新data.json ***")
 
     with open(data_file, 'w') as file:
         json.dump(price_records, file, indent=4)
         logging.info("*** 成功更新fuel_prices.json ***")
 
-    # 检查是否有足够的数据进行价格变动计算
-    check_price_change(price_records, lowest_price_info)
 
-    # 检查是否需要发送可视化图表邮件
-    check_and_send_visualization(price_records, record_data)
-
-
-def check_price_change(price_records, current_record):
+def check_price_change(price_records, current_record, fuel_type):
     logging.info("开始检查价格变动...")
     if not price_records or (
             datetime.now() - datetime.strptime(price_records[0]['timestamp'], '%Y-%m-%d %H:%M:%S')).days < 10:
@@ -180,7 +177,7 @@ def check_price_change(price_records, current_record):
                         ((highest_price_90_days - current_price) / highest_price_90_days) * 100, 2)
                     logging.info(f"当前价格相比过去90天最高点的变化百分比: {price_change_percentage}%")
                     alert_sent['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # 更新警报发送时间
-                    send_email(current_record, highest_price_90_days, price_change_percentage, alert_line[-1])
+                    send_email(current_record, highest_price_90_days, price_change_percentage, alert_line[-1], fuel_type)
                 else:
                     logging.info("价格变动不足1%，不发送警报邮件。")
             else:
@@ -191,14 +188,14 @@ def check_price_change(price_records, current_record):
         logging.info("最近90天内没有足够的价格数据。")
 
 
-def send_email(current_record, highest_price_90_days, price_change_percentage, moving_average_30_days):
+def send_email(current_record, highest_price_90_days, price_change_percentage, moving_average_30_days, fuel_type):
     get_recipient_mails()
     gmail_user = mail
     gmail_password = mail_password
     for recipient_mail in recipient_mails:
         # 创建HTML格式的邮件
         msg = MIMEMultipart('related')
-        msg['Subject'] = '⚠️ 油价降低提醒 - 现在是加油的好时机!'
+        msg['Subject'] = f'⚠️ {fuel_type}油价降低提醒 - 现在是加油的好时机!'
         msg['From'] = gmail_user
         msg['To'] = recipient_mail
 
@@ -305,7 +302,7 @@ def send_email(current_record, highest_price_90_days, price_change_percentage, m
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>油价降低提醒</h1>
+                    <h1>{fuel_type}油价降低提醒</h1>
                     <p>{current_time}</p>
                 </div>
                 
@@ -373,7 +370,7 @@ def send_email(current_record, highest_price_90_days, price_change_percentage, m
             logging.warning(f'邮件发送失败到: {recipient_mail} 错误: {e}')
 
 
-def check_and_send_visualization(price_records, record_data):
+def check_and_send_visualization(price_records, record_data, fuel_type):
     logging.info("检查是否需要发送可视化图表邮件...")
     if not price_records:
         logging.info("没有找到价格记录，不发送邮件")
@@ -386,14 +383,14 @@ def check_and_send_visualization(price_records, record_data):
     now = datetime.now()
     if not last_sent_timestamp or (now - datetime.strptime(last_sent_timestamp, '%Y-%m-%d %H:%M:%S')).days >= 7:
         # 生成并发送图表邮件
-        send_visualization_email(record_data)
+        send_visualization_email(record_data, fuel_type)
         # 更新发送时间戳
         last_record['last_sent'] = now.strftime('%Y-%m-%d %H:%M:%S')
         with open(data_file, 'w') as file:
             json.dump(price_records, file, indent=4)
 
 
-def send_visualization_email(record_data):
+def send_visualization_email(record_data, fuel_type):
     get_recipient_mails()
     recent_90_days_records = [
         record for record in record_data
@@ -436,8 +433,8 @@ def send_visualization_email(record_data):
     ax.set_facecolor('#FCFCFC')
     
     # 绘制价格线
-    ax.plot(dates, prices, marker='o', markersize=4, linestyle='-', linewidth=2, 
-            color=main_color, label='QLD - U91 价格')
+    ax.plot(dates, prices, marker='o', markersize=4, linestyle='-', linewidth=2,
+            color=main_color, label=f'QLD - {fuel_type} 价格')
     
     # 绘制警报线
     ax.plot(dates, alert_line, linestyle='--', linewidth=1.5, 
@@ -465,7 +462,7 @@ def send_visualization_email(record_data):
     # 设置轴标签和标题
     ax.set_xlabel('日期', fontsize=14, fontweight='bold')
     ax.set_ylabel('价格 (¢/L)', fontsize=14, fontweight='bold')
-    ax.set_title('昆士兰州U91油价走势图 (含90天最高价和30天均线)', fontsize=18, fontweight='bold', pad=20)
+    ax.set_title(f'昆士兰州{fuel_type}油价走势图 (含90天最高价和30天均线)', fontsize=18, fontweight='bold', pad=20)
     
     # 设置图例
     ax.legend(loc='upper right', frameon=True, fancybox=True, shadow=True, fontsize=12)
@@ -512,7 +509,7 @@ def send_visualization_email(record_data):
     for recipient_mail in recipient_mails:
         # 创建邮件
         msg = MIMEMultipart('related')
-        msg['Subject'] = '油价周报 - 昆士兰州U91最新价格'
+        msg['Subject'] = f'油价周报 - 昆士兰州{fuel_type}最新价格'
         msg['From'] = gmail_user
         msg['To'] = recipient_mail
         
@@ -588,7 +585,7 @@ def send_visualization_email(record_data):
             </div>
             
             <div class="content">
-                <h2>昆士兰州U91汽油价格概览</h2>
+                <h2>昆士兰州{fuel_type}汽油价格概览</h2>
                 
                 <table class="data-table">
                     <tr>
