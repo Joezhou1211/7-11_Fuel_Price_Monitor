@@ -1,0 +1,298 @@
+import json
+import time
+import threading
+import requests
+import logging
+from datetime import datetime, timedelta
+import pandas as pd
+from flask import Flask, send_from_directory, render_template
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+
+# File paths
+DATA_FILE = 'fuel_prices.json'
+FULL_DATA_FILE = 'data.json'
+RECIPIENT_FILE = 'recipient_mails.json'
+
+# Mail credentials (update these before running)
+MAIL_USER = ''
+MAIL_PASS = ''
+
+# Alert state per fuel type
+ALERT_STATE = {}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+
+def load_json(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+
+def save_json(path, data):
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+
+def fetch_fuel_prices():
+    """Fetch raw data from the public API."""
+    url = 'https://projectzerothree.info/api.php?format=json'
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+
+def parse_lowest_prices(data):
+    """Return the lowest price record for each fuel type in QLD."""
+    qld_region = next((r for r in data.get('regions', []) if r['region'] == 'QLD'), None)
+    if not qld_region:
+        return {}
+
+    lowest = {}
+    for item in qld_region.get('prices', []):
+        f_type = item['type']
+        if f_type not in lowest or item['price'] < lowest[f_type]['price']:
+            lowest[f_type] = item
+
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for info in lowest.values():
+        info['timestamp'] = timestamp
+    return lowest
+
+
+def update_records(lowest_prices):
+    """Update local JSON files and return records that changed."""
+    if not lowest_prices:
+        return []
+
+    changed = []
+    full_records = load_json(FULL_DATA_FILE)
+    day_records = load_json(DATA_FILE)
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    for fuel_type, info in lowest_prices.items():
+        full_records.append(info)
+        current_day = [r for r in day_records if r['type'] == fuel_type and r['timestamp'].startswith(today)]
+        if not current_day or info['price'] < min(current_day, key=lambda x: x['price'])['price']:
+            day_records = [r for r in day_records if not (r['type'] == fuel_type and r['timestamp'].startswith(today))]
+            day_records.append(info)
+            changed.append(info)
+
+    save_json(FULL_DATA_FILE, full_records)
+    if changed:
+        save_json(DATA_FILE, day_records)
+    return changed
+
+
+def should_trigger_alert(records, current_record):
+    """Determine if an alert should be sent for a record."""
+    if len(records) < 10:
+        return False, {}
+
+    now = datetime.now()
+    ninety_days_ago = now - timedelta(days=90)
+    recent_prices = [
+        r['price'] for r in records
+        if datetime.strptime(r['timestamp'], '%Y-%m-%d %H:%M:%S') > ninety_days_ago
+    ]
+    if not recent_prices:
+        return False, {}
+
+    highest = max(recent_prices)
+    window = min(240, len(recent_prices))
+    moving_avg = pd.Series(recent_prices).rolling(window=window, min_periods=1).mean().tolist()
+    alert_line = moving_avg[-1] * 0.95
+    price = current_record['price']
+
+    cond1 = (highest - price) / highest >= 0.10
+    cond2 = price < alert_line
+    cond3 = price < 140
+
+    triggered = (cond1 and cond2) or cond3
+    info = {
+        'highest': highest,
+        'alert_line': alert_line,
+        'change_pct': -round((highest - price) / highest * 100, 2)
+    }
+    return triggered, info
+
+
+def send_alert_email(record, info):
+    """Send the alert email for the given record."""
+    get_recipient_mails()
+    subject = f'⚠️ {record["type"]} price alert'
+    for receiver in RECIPIENTS:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = MAIL_USER
+        msg['To'] = receiver
+
+        body = (
+            f"Station: {record['name']}\n"
+            f"Location: {record['suburb']}, {record['state']} {record['postcode']}\n"
+            f"Price: {record['price']}¢/L\n"
+            f"Timestamp: {record['timestamp']}\n\n"
+            f"90 Day High: {info['highest']}¢/L\n"
+            f"Change: {info['change_pct']}%\n"
+            f"Alert Line: {info['alert_line']:.2f}¢/L"
+        )
+        msg.attach(MIMEText(body))
+        try:
+            server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+            server.login(MAIL_USER, MAIL_PASS)
+            server.sendmail(MAIL_USER, receiver, msg.as_string())
+            server.quit()
+            logging.info('Alert email sent to %s', receiver)
+        except Exception as exc:
+            logging.warning('Failed to send alert email to %s: %s', receiver, exc)
+
+
+def get_recipient_mails():
+    global RECIPIENTS
+    RECIPIENTS = load_json(RECIPIENT_FILE)
+
+
+def send_weekly_report(records, fuel_type):
+    """Send weekly chart email."""
+    if not records:
+        return
+    now = datetime.now()
+    ninety_days_ago = now - timedelta(days=90)
+    recent = [r for r in records if datetime.strptime(r['timestamp'], '%Y-%m-%d %H:%M:%S') > ninety_days_ago]
+    if not recent:
+        return
+
+    dates = [datetime.strptime(r['timestamp'], '%Y-%m-%d %H:%M:%S') for r in recent]
+    prices = [r['price'] for r in recent]
+    highest = max(prices)
+    window = min(240, len(prices))
+    moving_avg = pd.Series(prices).rolling(window=window, min_periods=1).mean()
+    alert_line = moving_avg * 0.95
+
+    import matplotlib.pyplot as plt
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(dates, prices, label=fuel_type)
+    ax.plot(dates, alert_line, label='alert line')
+    ax.axhline(highest, color='r', linestyle='--', label='90 day high')
+    ax.legend()
+    fig.autofmt_xdate()
+    chart_path = 'weekly_chart.png'
+    plt.savefig(chart_path)
+    plt.close(fig)
+
+    get_recipient_mails()
+    for receiver in RECIPIENTS:
+        msg = MIMEMultipart()
+        msg['Subject'] = f'{fuel_type} weekly price chart'
+        msg['From'] = MAIL_USER
+        msg['To'] = receiver
+        msg.attach(MIMEText(f'Total points: {len(prices)}'))
+        with open(chart_path, 'rb') as f:
+            img = MIMEImage(f.read())
+            img.add_header('Content-ID', '<chart>')
+            msg.attach(img)
+        msg.attach(MIMEText('<img src="cid:chart">', 'html'))
+        try:
+            server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+            server.login(MAIL_USER, MAIL_PASS)
+            server.sendmail(MAIL_USER, receiver, msg.as_string())
+            server.quit()
+            logging.info('Weekly report sent to %s', receiver)
+        except Exception as exc:
+            logging.warning('Failed to send weekly report to %s: %s', receiver, exc)
+
+
+# --- loops ---
+
+def data_loop():
+    while True:
+        try:
+            raw = fetch_fuel_prices()
+            lowest = parse_lowest_prices(raw)
+            changed = update_records(lowest)
+            for rec in changed:
+                ALERT_QUEUE.append(rec)
+        except Exception as exc:
+            logging.error('Data loop error: %s', exc)
+        time.sleep(3600)
+
+
+def alert_loop():
+    while True:
+        if ALERT_QUEUE:
+            record = ALERT_QUEUE.pop(0)
+            all_records = [r for r in load_json(DATA_FILE) if r['type'] == record['type']]
+            triggered, info = should_trigger_alert(all_records, record)
+            if triggered:
+                state = ALERT_STATE.get(record['type'])
+                today = datetime.now().date()
+                if not state or datetime.strptime(state['timestamp'], '%Y-%m-%d %H:%M:%S').date() != today:
+                    send_alert_email(record, info)
+                    ALERT_STATE[record['type']] = {
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'price': record['price']
+                    }
+        time.sleep(10)
+
+
+def weekly_loop():
+    while True:
+        records = load_json(DATA_FILE)
+        types = {r['type'] for r in records}
+        for f_type in types:
+            type_records = [r for r in records if r['type'] == f_type]
+            last_sent = max((datetime.strptime(r.get('last_sent'), '%Y-%m-%d %H:%M:%S')
+                              for r in type_records if r.get('last_sent')), default=None)
+            if not last_sent or (datetime.now() - last_sent).days >= 7:
+                send_weekly_report(type_records, f_type)
+                if type_records:
+                    type_records[-1]['last_sent'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        save_json(DATA_FILE, records)
+        time.sleep(86400)
+
+
+# --- Flask UI ---
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/fuel_prices.json')
+def serve_day():
+    return send_from_directory('.', DATA_FILE)
+
+@app.route('/data.json')
+def serve_full():
+    return send_from_directory('.', FULL_DATA_FILE)
+
+
+# shared queue for alerts
+ALERT_QUEUE = []
+
+
+def main():
+    threads = [
+        threading.Thread(target=data_loop, daemon=True),
+        threading.Thread(target=alert_loop, daemon=True),
+        threading.Thread(target=weekly_loop, daemon=True),
+        threading.Thread(target=lambda: app.run(host='0.0.0.0', port=6789, debug=False), daemon=True)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+
+if __name__ == '__main__':
+    main()
+
