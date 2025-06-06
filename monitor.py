@@ -5,7 +5,7 @@ import requests
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
-from flask import Flask, send_from_directory, render_template, request
+from flask import Flask, send_from_directory, render_template, request, jsonify
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -15,6 +15,15 @@ from email.mime.image import MIMEImage
 DATA_FILE = 'fuel_prices.json'
 FULL_DATA_FILE = 'data.json'
 RECIPIENT_FILE = 'recipient_mails.json'
+
+# Structure of subscriptions
+# {
+#   "weekly": ["email@foo"],
+#   "alerts": {"email@foo": [{"fuel_type":"U91","method":"moving_average"}]}
+# }
+
+CODE_CACHE = {}
+SUBSCRIPTIONS = {}
 
 # Mail credentials (update these before running)
 MAIL_USER = ''
@@ -29,17 +38,73 @@ logging.basicConfig(
 )
 
 
-def load_json(path):
+def load_json(path, default=None):
     try:
         with open(path, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        return []
+        return default if default is not None else []
 
 
 def save_json(path, data):
     with open(path, 'w') as f:
         json.dump(data, f, indent=4)
+
+
+def load_subscriptions():
+    global SUBSCRIPTIONS
+    SUBSCRIPTIONS = load_json(RECIPIENT_FILE, default={"weekly": [], "alerts": {}})
+
+
+def save_subscriptions():
+    save_json(RECIPIENT_FILE, SUBSCRIPTIONS)
+
+
+def send_verification_email(email, code):
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Your verification code'
+    msg['From'] = MAIL_USER
+    msg['To'] = email
+    html = f"<p>Your verification code is <b>{code}</b>. It expires in 1 minute.</p>"
+    msg.attach(MIMEText(html, 'html'))
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(MAIL_USER, MAIL_PASS)
+        server.sendmail(MAIL_USER, email, msg.as_string())
+        server.quit()
+        logging.info('Verification code sent to %s', email)
+    except Exception as exc:
+        logging.warning('Failed to send code to %s: %s', email, exc)
+
+
+def verify_code(email, code):
+    record = CODE_CACHE.get(email)
+    if not record:
+        return False
+    stored, ts = record
+    if stored != code:
+        return False
+    if (datetime.now() - ts).seconds > 60:
+        return False
+    return True
+
+
+def add_subscription(email, weekly=False, alerts=None):
+    if weekly and email not in SUBSCRIPTIONS['weekly']:
+        SUBSCRIPTIONS['weekly'].append(email)
+    if alerts:
+        SUBSCRIPTIONS.setdefault('alerts', {})
+        SUBSCRIPTIONS['alerts'].setdefault(email, [])
+        SUBSCRIPTIONS['alerts'][email].extend(alerts)
+    save_subscriptions()
+
+
+def remove_subscription(email):
+    if email in SUBSCRIPTIONS.get('weekly', []):
+        SUBSCRIPTIONS['weekly'].remove(email)
+    if SUBSCRIPTIONS.get('alerts', {}).get(email):
+        SUBSCRIPTIONS['alerts'].pop(email)
+    save_subscriptions()
 
 
 def fetch_fuel_prices():
@@ -92,8 +157,8 @@ def update_records(lowest_prices):
     return changed
 
 
-def should_trigger_alert(records, current_record):
-    """Determine if an alert should be sent for a record."""
+def evaluate_alert(records, current_record, method, threshold=None):
+    """Evaluate if an alert should trigger based on method."""
     if len(records) < 10:
         return False, {}
 
@@ -106,30 +171,35 @@ def should_trigger_alert(records, current_record):
     if not recent_prices:
         return False, {}
 
-    highest = max(recent_prices)
-    window = min(240, len(recent_prices))
-    moving_avg = pd.Series(recent_prices).rolling(window=window, min_periods=1).mean().tolist()
-    alert_line = moving_avg[-1] * 0.95
     price = current_record['price']
+    highest = max(recent_prices)
+    info = {'highest': highest}
 
-    cond1 = (highest - price) / highest >= 0.10
-    cond2 = price < alert_line
-    cond3 = price < 140
+    if method == 'moving_average':
+        window = min(240, len(recent_prices))
+        ma = pd.Series(recent_prices).rolling(window=window, min_periods=1).mean().iloc[-1]
+        alert_line = ma * 0.95
+        triggered = price < alert_line and (highest - price) / highest >= 0.10
+        info.update({'alert_line': alert_line, 'change_pct': -round((highest - price) / highest * 100, 2)})
+    elif method == 'lowest':
+        lowest = min(recent_prices)
+        triggered = price <= lowest
+        info.update({'lowest': lowest})
+    elif method == 'fixed':
+        if threshold is None:
+            threshold = 140
+        triggered = price < threshold
+        info.update({'threshold': threshold})
+    else:
+        triggered = False
 
-    triggered = (cond1 and cond2) or cond3
-    info = {
-        'highest': highest,
-        'alert_line': alert_line,
-        'change_pct': -round((highest - price) / highest * 100, 2)
-    }
     return triggered, info
 
 
-def send_alert_email(record, info):
-    """Send the alert email for the given record."""
-    get_recipient_mails()
+def send_alert_email(record, info, receivers):
+    """Send the alert email for the given record to receivers."""
     subject = f'⚠️ {record["type"]} price alert'
-    for receiver in RECIPIENTS:
+    for receiver in receivers:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = MAIL_USER
@@ -153,11 +223,6 @@ def send_alert_email(record, info):
             logging.info('Alert email sent to %s', receiver)
         except Exception as exc:
             logging.warning('Failed to send alert email to %s: %s', receiver, exc)
-
-
-def get_recipient_mails():
-    global RECIPIENTS
-    RECIPIENTS = load_json(RECIPIENT_FILE)
 
 
 def send_weekly_report(records, fuel_type):
@@ -189,18 +254,22 @@ def send_weekly_report(records, fuel_type):
     plt.savefig(chart_path)
     plt.close(fig)
 
-    get_recipient_mails()
-    for receiver in RECIPIENTS:
-        msg = MIMEMultipart()
-        msg['Subject'] = f'{fuel_type} weekly price chart'
+    receivers = SUBSCRIPTIONS.get('weekly', [])
+    for receiver in receivers:
+        msg = MIMEMultipart('related')
+        msg['Subject'] = f'{fuel_type} Weekly Price Chart'
         msg['From'] = MAIL_USER
         msg['To'] = receiver
-        msg.attach(MIMEText(f'Total points: {len(prices)}'))
+        html = (
+            f"<h2>{fuel_type} Weekly Price Chart</h2>"
+            f"<p>Total points: {len(prices)}</p>"
+            f"<img src='cid:chart' style='max-width:100%;'>"
+        )
+        msg.attach(MIMEText(html, 'html'))
         with open(chart_path, 'rb') as f:
             img = MIMEImage(f.read())
             img.add_header('Content-ID', '<chart>')
             msg.attach(img)
-        msg.attach(MIMEText('<img src="cid:chart">', 'html'))
         try:
             server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
             server.login(MAIL_USER, MAIL_PASS)
@@ -231,16 +300,21 @@ def alert_loop():
         if ALERT_QUEUE:
             record = ALERT_QUEUE.pop(0)
             all_records = [r for r in load_json(DATA_FILE) if r['type'] == record['type']]
-            triggered, info = should_trigger_alert(all_records, record)
-            if triggered:
-                state = ALERT_STATE.get(record['type'])
-                today = datetime.now().date()
-                if not state or datetime.strptime(state['timestamp'], '%Y-%m-%d %H:%M:%S').date() != today:
-                    send_alert_email(record, info)
-                    ALERT_STATE[record['type']] = {
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'price': record['price']
-                    }
+            alerts = SUBSCRIPTIONS.get('alerts', {})
+            for email, configs in alerts.items():
+                for cfg in configs:
+                    if cfg.get('fuel_type') != record['type']:
+                        continue
+                    triggered, info = evaluate_alert(all_records, record, cfg.get('method'), cfg.get('threshold'))
+                    if triggered:
+                        state = ALERT_STATE.get(email)
+                        today = datetime.now().date()
+                        if not state or datetime.strptime(state['timestamp'], '%Y-%m-%d %H:%M:%S').date() != today:
+                            send_alert_email(record, info, [email])
+                            ALERT_STATE[email] = {
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'price': record['price']
+                            }
         time.sleep(10)
 
 
@@ -267,6 +341,14 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
+@app.route('/subscribe')
+def subscribe_page():
+    return render_template('subscribe.html')
+
+@app.route('/unsubscribe')
+def unsubscribe_page():
+    return render_template('unsubscribe.html')
+
 @app.route('/fuel_prices.json')
 def serve_day():
     return send_from_directory('.', DATA_FILE)
@@ -276,13 +358,38 @@ def serve_full():
     return send_from_directory('.', FULL_DATA_FILE)
 
 
-@app.route('/recipient_mails.json', methods=['GET', 'PUT'])
-def handle_recipients():
-    """Serve and update subscription emails."""
-    if request.method == 'GET':
-        return send_from_directory('.', RECIPIENT_FILE)
-    data = request.get_json(force=True)
-    save_json(RECIPIENT_FILE, data)
+@app.route('/send_code', methods=['POST'])
+def api_send_code():
+    email = request.json.get('email')
+    if not email:
+        return jsonify({'error': 'email required'}), 400
+    code = '{:06d}'.format(int(time.time()*1000) % 1000000)
+    CODE_CACHE[email] = (code, datetime.now())
+    send_verification_email(email, code)
+    return '', 204
+
+
+@app.route('/subscribe', methods=['POST'])
+def api_subscribe():
+    data = request.json
+    email = data.get('email')
+    code = data.get('code')
+    if not verify_code(email, code):
+        return jsonify({'error': 'invalid code'}), 400
+    weekly = data.get('weekly', False)
+    alerts = data.get('alerts', [])
+    add_subscription(email, weekly, alerts)
+    return '', 204
+
+
+@app.route('/unsubscribe', methods=['POST'])
+def api_unsubscribe():
+    data = request.json
+    email = data.get('email')
+    code = data.get('code')
+    if not verify_code(email, code):
+        return jsonify({'error': 'invalid code'}), 400
+    remove_subscription(email)
     return '', 204
 
 
@@ -291,6 +398,7 @@ ALERT_QUEUE = []
 
 
 def main():
+    load_subscriptions()
     threads = [
         threading.Thread(target=data_loop, daemon=True),
         threading.Thread(target=alert_loop, daemon=True),

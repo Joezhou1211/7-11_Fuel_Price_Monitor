@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>油价监控中心</title>
+    <title>Fuel Price Monitor</title>
     <style>
         :root {
             --primary-color: #3498db;
@@ -158,8 +158,8 @@
 <body>
     <div class="container">
         <header>
-            <h1>油价监控中心</h1>
-            <p>实时追踪并通知您澳洲昆士兰州最低油价</p>
+            <h1>Fuel Price Monitor</h1>
+            <p>Real-time tracking of the lowest fuel prices in Queensland, Australia</p>
         </header>
         
         <div class="chart-container">
@@ -168,17 +168,16 @@
         
         <div class="form-control">
             <div class="input-group">
-                <input id="inputField" type="email" placeholder="请输入您的邮箱地址">
                 <div class="button-container">
-                    <button id="subscribeButton">订阅通知</button>
-                    <button id="unsubscribeButton">取消订阅</button>
-                    <button id="downloadButton">下载数据</button>
+                    <a id="subscribeButton" href="/subscribe">Subscribe weekly price / set alert</a>
+                    <a id="unsubscribeButton" href="/unsubscribe">Unsubscribe</a>
+                    <button id="downloadButton">Download data</button>
                 </div>
             </div>
         </div>
         
         <footer>
-            <p>&copy; 2024 油价监控中心 - 帮助您节省燃油开支</p>
+            <p>&copy; 2024 Fuel Price Monitor - Save on your fuel expenses</p>
         </footer>
     </div>
 
