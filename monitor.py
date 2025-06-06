@@ -39,7 +39,7 @@ def load_json(path, default=None):
     try:
         with open(path, 'r') as f:
             return json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return default if default is not None else []
 
 

@@ -39,6 +39,13 @@ Follow these steps to get the monitor running:
    ```
 5. Visit `http://<server>:6789` to view charts or manage subscriptions.
 
+If upgrading from an older version where `recipient_mails.json` was a plain
+list, run the helper script to convert it:
+
+```bash
+python convert_subscriptions.py
+```
+
 
 
 # You can now use an HTML page to view real-time price charts and Add/Remove the recipients.
