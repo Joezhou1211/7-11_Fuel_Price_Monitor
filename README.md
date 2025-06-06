@@ -12,20 +12,18 @@ The fetched prices are saved locally in fuel_prices.json.
 ### Updating Local Records:
 
 The script maintains a record of the latest 90 days of fuel prices.
-It updates the local JSON file with new price data.
-### Generating Price Chart:
+It updates the local JSON file with new price data which can be viewed on the web dashboard.
+### Weekly Price Email:
 
-The script generates a price chart using Matplotlib.
-The chart includes price trends for each fuel type and the highest price in the last 90 days.
+Each week the monitor emails a short summary of the latest prices for all fuel types.
+The message contains a link to the dashboard so you can check detailed charts.
 ### Sending Alert Emails:
 
 The monitor can send alert emails when the price drops below a calculated threshold
 (95% of the current moving average and at least 10% lower than the 90‑day high).
 The alert email includes the station information, current price and the alert line.
-### Sending Price Chart Emails:
+The weekly email summarises the current prices and includes a link to https://nullpointers.site:8083 for more details.
 
-The script sends a weekly email with the generated price chart.
-The email includes information about the number of data points, the current trigger price, and the highest price in the last 90 days.
 
 ## Setup
 Follow these steps to get the monitor running:
