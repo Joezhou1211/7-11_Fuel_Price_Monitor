@@ -9,6 +9,7 @@ from flask import Flask, send_from_directory, render_template, request, jsonify
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import random
 
 # File paths
 DATA_FILE = 'fuel_prices.json'
@@ -399,8 +400,11 @@ def api_send_code():
         return jsonify({'error': 'email not subscribed'}), 404
     if action == 'subscribe' and (email in SUBSCRIPTIONS.get('weekly', []) or email in SUBSCRIPTIONS.get('alerts', {})):
         return jsonify({'error': 'email already subscribed'}), 400
-
-
+    # generate verification code
+    code = str(random.randint(100000, 999999))
+    CODE_CACHE[email] = (code, datetime.now())
+    send_verification_email(email, code)
+    return '', 204
 @app.route('/subscribe', methods=['POST'])
 def api_subscribe():
     data = request.json
