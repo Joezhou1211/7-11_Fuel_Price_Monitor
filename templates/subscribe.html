@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Subscribe</title>
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         body {font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin:auto; background:#f4f6f8;}
-        .step {margin-bottom:20px; background:white; padding:20px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}        
+        .step {margin-bottom:20px; background:white; padding:20px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}
         input, select, button {margin-top:8px; padding:8px 12px; border-radius:4px; border:1px solid #ccc; font-size:14px;}
-        button {cursor:pointer; background:#3498db; color:white; border:none;}
         button:disabled {background:#ccc; cursor:not-allowed;}
     </style>
 </head>
@@ -35,14 +35,15 @@
             <input id="threshold" type="number" placeholder="Threshold" style="display:none;">
             <input id="maWindow" type="number" placeholder="MA days" style="display:none;">
         </div>
-        <button id="next">Next</button>
+        <button id="next" class="btn btn-primary">Next</button>
     </div>
     <div id="step2" class="step" style="display:none;">
         <input id="email" type="email" placeholder="Email"><br>
-        <button id="sendCode">Send Code</button><br>
+        <button id="sendCode" class="btn btn-primary">Send Code</button><br>
         <input id="code" placeholder="Verification code"><br>
-        <button id="submit">Submit</button>
+        <button id="submit" class="btn btn-success">Submit</button>
     </div>
+    <script src="/static/script.js"></script>
     <script src="/static/subscribe.js"></script>
 </body>
 </html>

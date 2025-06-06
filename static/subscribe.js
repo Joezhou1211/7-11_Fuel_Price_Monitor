@@ -43,8 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => {
                 if (res.ok) {
                     startCountdown();
+                    showMessage('Verification code sent', 'success');
                 } else {
-                    res.json().then(d => alert(d.error || 'Failed'));
+                    res.json().then(d => showMessage(d.error || 'Failed', 'error'));
                 }
             });
     };
@@ -62,9 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('/subscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, code, weekly, alerts})})
             .then(r => {
                 if(r.ok) {
-                    window.location='/';
+                    showMessage('Subscription successful', 'success');
+                    setTimeout(() => { window.location='/'; }, 800);
                 } else {
-                    r.json().then(d => alert(d.error || 'Failed'));
+                    r.json().then(d => showMessage(d.error || 'Failed', 'error'));
                 }
             });
     };

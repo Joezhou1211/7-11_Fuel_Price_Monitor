@@ -270,9 +270,17 @@ def send_weekly_summary(prices, receivers):
     )
     html = f"""
 <div style='font-family:Arial,sans-serif;font-size:16px;'>
-<h2 style='color:#333'>Current Fuel Prices</h2>
-<table style='border-collapse:collapse;margin-top:10px'>{rows}</table>
-<p style='margin-top:10px'>Visit <a href='https://nullpointers.site:8083'>dashboard</a> for details.</p>
+  <h2 style='color:#333;margin-bottom:10px'>Current Fuel Prices</h2>
+  <table style='border-collapse:collapse;text-align:left;'>
+    <thead>
+      <tr style='background:#f4f6f8'>
+        <th style='padding:8px 12px;border:1px solid #ddd'>Fuel</th>
+        <th style='padding:8px 12px;border:1px solid #ddd'>Price</th>
+      </tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+  <p style='margin-top:10px'>Visit <a href='https://nullpointers.site:8083'>dashboard</a> for details.</p>
 </div>
 """
     for receiver in receivers:
@@ -389,10 +397,8 @@ def api_send_code():
         return jsonify({'error': 'too many requests'}), 429
     if action == 'unsubscribe' and email not in SUBSCRIPTIONS.get('weekly', []) and email not in SUBSCRIPTIONS.get('alerts', {}):
         return jsonify({'error': 'email not subscribed'}), 404
-    code = '{:06d}'.format(int(time.time()*1000) % 1000000)
-    CODE_CACHE[email] = (code, datetime.now())
-    send_verification_email(email, code)
-    return '', 204
+    if action == 'subscribe' and (email in SUBSCRIPTIONS.get('weekly', []) or email in SUBSCRIPTIONS.get('alerts', {})):
+        return jsonify({'error': 'email already subscribed'}), 400
 
 
 @app.route('/subscribe', methods=['POST'])

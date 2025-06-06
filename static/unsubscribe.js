@@ -24,8 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => {
                 if (res.ok) {
                     startCountdown();
+                    showMessage('Verification code sent', 'success');
                 } else {
-                    res.json().then(d => alert(d.error || 'Failed'));
+                    res.json().then(d => showMessage(d.error || 'Failed', 'error'));
                 }
             });
     };
@@ -35,9 +36,10 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('/unsubscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, code})})
             .then(r => {
                 if(r.ok) {
-                    window.location = '/';
+                    showMessage('Unsubscribed', 'success');
+                    setTimeout(() => { window.location='/'; }, 800);
                 } else {
-                    r.json().then(d => alert(d.error || 'Failed'));
+                    r.json().then(d => showMessage(d.error || 'Failed', 'error'));
                 }
             });
     };
