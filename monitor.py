@@ -5,7 +5,7 @@ import requests
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
-from flask import Flask, send_from_directory, render_template
+from flask import Flask, send_from_directory, render_template, request
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -274,6 +274,16 @@ def serve_day():
 @app.route('/data.json')
 def serve_full():
     return send_from_directory('.', FULL_DATA_FILE)
+
+
+@app.route('/recipient_mails.json', methods=['GET', 'PUT'])
+def handle_recipients():
+    """Serve and update subscription emails."""
+    if request.method == 'GET':
+        return send_from_directory('.', RECIPIENT_FILE)
+    data = request.get_json(force=True)
+    save_json(RECIPIENT_FILE, data)
+    return '', 204
 
 
 # shared queue for alerts
