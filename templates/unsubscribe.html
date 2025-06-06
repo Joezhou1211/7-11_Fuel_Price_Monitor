@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unsubscribe</title>
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         body{font-family:Arial, sans-serif; background:#f4f6f8; padding:20px; max-width:600px; margin:auto;}
         .box{background:white; padding:20px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);}
         input,button{margin-top:8px; padding:8px 12px; border-radius:4px; border:1px solid #ccc; font-size:14px;}
-        button{background:#e74c3c; color:white; border:none; cursor:pointer;}
         button:disabled{background:#ccc; cursor:not-allowed;}
     </style>
 </head>
@@ -16,10 +16,11 @@
     <div class="box">
         <h1>Unsubscribe</h1>
         <input id="email" type="email" placeholder="Email"><br>
-        <button id="sendCode">Send Code</button><br>
+        <button id="sendCode" class="btn btn-primary">Send Code</button><br>
         <input id="code" placeholder="Verification code"><br>
-        <button id="submit">Submit</button>
+        <button id="submit" class="btn btn-danger">Submit</button>
     </div>
+    <script src="/static/script.js"></script>
     <script src="/static/unsubscribe.js"></script>
 </body>
 </html>

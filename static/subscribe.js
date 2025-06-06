@@ -39,12 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
     sendBtn.onclick = () => {
         const email = document.getElementById('email').value;
         if (!email) return;
-        fetch('/send_code', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email})})
+        fetch('/send_code', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, action:'subscribe'})})
             .then(res => {
                 if (res.ok) {
                     startCountdown();
+                    showMessage('Verification code sent', 'success');
                 } else {
-                    res.json().then(d => alert(d.error || 'Failed'));
+                    res.json().then(d => showMessage(d.error || 'Failed', 'error'));
                 }
             });
     };
@@ -60,6 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
             ma_window: parseInt(maInput.value) || undefined
         }] : [];
         fetch('/subscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, code, weekly, alerts})})
-            .then(r => {if(r.ok) window.location='/';});
+            .then(r => {
+                if(r.ok) {
+                    showMessage('Subscription successful', 'success');
+                    setTimeout(() => { window.location='/'; }, 800);
+                } else {
+                    r.json().then(d => showMessage(d.error || 'Failed', 'error'));
+                }
+            });
     };
 });

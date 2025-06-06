@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fuel Price Monitor</title>
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         :root {
             --primary-color: #3498db;
@@ -106,33 +107,6 @@
             transition: all 0.3s;
         }
         
-        #subscribeButton {
-            background-color: var(--primary-color);
-            color: white;
-        }
-        
-        #subscribeButton:hover {
-            background-color: #2980b9;
-        }
-        
-        #unsubscribeButton {
-            background-color: var(--danger-color);
-            color: white;
-        }
-        
-        #unsubscribeButton:hover {
-            background-color: #c0392b;
-        }
-        
-        #downloadButton {
-            background-color: var(--secondary-color);
-            color: white;
-        }
-        
-        #downloadButton:hover {
-            background-color: #27ae60;
-        }
-        
         footer {
             text-align: center;
             margin-top: 30px;
@@ -169,9 +143,9 @@
         <div class="form-control">
             <div class="input-group">
                 <div class="button-container">
-                    <a id="subscribeButton" href="/subscribe">Subscribe weekly price / set alert</a>
-                    <a id="unsubscribeButton" href="/unsubscribe">Unsubscribe</a>
-                    <button id="downloadButton">Download data</button>
+                    <a id="subscribeButton" class="btn btn-primary" href="/subscribe">Subscribe weekly price / set alert</a>
+                    <a id="unsubscribeButton" class="btn btn-danger" href="/unsubscribe">Unsubscribe</a>
+                    <button id="downloadButton" class="btn btn-success">Download data</button>
                 </div>
             </div>
         </div>
