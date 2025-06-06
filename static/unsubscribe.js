@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sendBtn.onclick = () => {
         const email = document.getElementById('email').value;
         if (!email) return;
-        fetch('/send_code', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email})})
+        fetch('/send_code', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, action:'unsubscribe'})})
             .then(res => {
                 if (res.ok) {
                     startCountdown();
@@ -33,6 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const email = document.getElementById('email').value;
         const code = document.getElementById('code').value;
         fetch('/unsubscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email, code})})
-            .then(r => {if(r.ok) window.location='/';});
+            .then(r => {
+                if(r.ok) {
+                    window.location = '/';
+                } else {
+                    r.json().then(d => alert(d.error || 'Failed'));
+                }
+            });
     };
 });
