@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscribe</title>
+    <style>
+        body {font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin:auto;}
+        .step {margin-bottom:20px;}
+    </style>
+</head>
+<body>
+    <h1>Subscribe / Set Alert</h1>
+    <div id="step1" class="step">
+        <label><input type="checkbox" id="weekly"> Subscribe weekly prices</label><br>
+        <label><input type="checkbox" id="alert"> Subscribe alerts</label><br>
+        <div id="alertOptions" style="display:none;margin-top:10px;">
+            <label>Fuel type:
+                <select id="fuelType">
+                    <option value="U91">U91</option>
+                    <option value="P95">P95</option>
+                    <option value="Diesel">Diesel</option>
+                </select>
+            </label><br>
+            <label>Method:
+                <select id="method">
+                    <option value="moving_average">Moving Average</option>
+                    <option value="lowest">Lowest Price</option>
+                    <option value="fixed">Fixed Threshold</option>
+                </select>
+            </label>
+            <input id="threshold" type="number" placeholder="Threshold" style="display:none;">
+        </div>
+        <button id="next">Next</button>
+    </div>
+    <div id="step2" class="step" style="display:none;">
+        <input id="email" type="email" placeholder="Email"><br>
+        <button id="sendCode">Send Code</button><br>
+        <input id="code" placeholder="Verification code"><br>
+        <button id="submit">Submit</button>
+    </div>
+    <script src="/static/subscribe.js"></script>
+</body>
+</html>
