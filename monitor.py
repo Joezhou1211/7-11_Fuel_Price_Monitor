@@ -53,7 +53,11 @@ def save_json(path, data):
 
 def load_subscriptions():
     global SUBSCRIPTIONS
-    SUBSCRIPTIONS = load_json(RECIPIENT_FILE, default={"weekly": [], "alerts": {}})
+    data = load_json(RECIPIENT_FILE, default={"weekly": [], "alerts": {}})
+    if isinstance(data, list):
+        data = {"weekly": data, "alerts": {}}
+        save_json(RECIPIENT_FILE, data)
+    SUBSCRIPTIONS = data
 
 
 def save_subscriptions():
@@ -65,7 +69,12 @@ def send_verification_email(email, code):
     msg['Subject'] = 'Your verification code'
     msg['From'] = MAIL_USER
     msg['To'] = email
-    html = f"<p>Your verification code is <b>{code}</b>. It expires in 1 minute.</p>"
+    html = (
+        f"<div style='font-family:Arial,sans-serif;font-size:16px;'>"
+        f"<p>Your verification code is <b style='font-size:24px'>{code}</b></p>"
+        f"<p style='color:#555'>This code expires in 1 minute.</p>"
+        f"</div>"
+    )
     msg.attach(MIMEText(html, 'html'))
     try:
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
@@ -157,7 +166,7 @@ def update_records(lowest_prices):
     return changed
 
 
-def evaluate_alert(records, current_record, method, threshold=None):
+def evaluate_alert(records, current_record, method, threshold=None, ma_window=None):
     """Evaluate if an alert should trigger based on method."""
     if len(records) < 10:
         return False, {}
@@ -176,7 +185,8 @@ def evaluate_alert(records, current_record, method, threshold=None):
     info = {'highest': highest}
 
     if method == 'moving_average':
-        window = min(240, len(recent_prices))
+        window = ma_window or 240
+        window = min(window, len(recent_prices))
         ma = pd.Series(recent_prices).rolling(window=window, min_periods=1).mean().iloc[-1]
         alert_line = ma * 0.95
         triggered = price < alert_line and (highest - price) / highest >= 0.10
@@ -305,7 +315,13 @@ def alert_loop():
                 for cfg in configs:
                     if cfg.get('fuel_type') != record['type']:
                         continue
-                    triggered, info = evaluate_alert(all_records, record, cfg.get('method'), cfg.get('threshold'))
+                    triggered, info = evaluate_alert(
+                        all_records,
+                        record,
+                        cfg.get('method'),
+                        cfg.get('threshold'),
+                        cfg.get('ma_window')
+                    )
                     if triggered:
                         state = ALERT_STATE.get(email)
                         today = datetime.now().date()
@@ -363,6 +379,9 @@ def api_send_code():
     email = request.json.get('email')
     if not email:
         return jsonify({'error': 'email required'}), 400
+    record = CODE_CACHE.get(email)
+    if record and (datetime.now() - record[1]).seconds < 60:
+        return jsonify({'error': 'too many requests'}), 429
     code = '{:06d}'.format(int(time.time()*1000) % 1000000)
     CODE_CACHE[email] = (code, datetime.now())
     send_verification_email(email, code)
