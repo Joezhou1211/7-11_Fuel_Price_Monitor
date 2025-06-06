@@ -56,6 +56,54 @@ async function downloadData() {
 // 初始化下载计时器
 let downloadTimer = 0;
 
+// ---------------- Chart Rendering -----------------
+let chart;
+const COLORS = ['#2196F3', '#FF5722', '#4CAF50', '#9C27B0', '#FFC107'];
+
+async function fetchChartData() {
+    try {
+        const records = await fetch('fuel_prices.json').then(r => r.json());
+        renderChart(records);
+    } catch (err) {
+        console.error('获取图表数据失败', err);
+    }
+}
+
+function renderChart(records) {
+    const grouped = {};
+    records.forEach(rec => {
+        const t = rec.type || 'UNKNOWN';
+        if (!grouped[t]) grouped[t] = [];
+        grouped[t].push({ x: new Date(rec.timestamp), y: rec.price });
+    });
+
+    const datasets = Object.keys(grouped).map((type, idx) => ({
+        label: type,
+        data: grouped[type].sort((a,b)=>a.x-b.x),
+        borderColor: COLORS[idx % COLORS.length],
+        tension: 0.3,
+        fill: false
+    }));
+
+    if (!chart) {
+        chart = new Chart(document.getElementById('priceChart'), {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day' } },
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+    } else {
+        chart.data.datasets = datasets;
+        chart.update();
+    }
+}
+
 // 消息提示函数
 function showMessage(message, type = 'info') {
     // 移除之前的消息
@@ -143,6 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (downloadButton) {
         downloadButton.addEventListener('click', downloadData);
     }
+
+    // 初始化图表
+    fetchChartData();
+    setInterval(fetchChartData, 60000);
 });
 
 
